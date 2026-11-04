@@ -9,6 +9,7 @@ from sklearn.datasets import load_breast_cancer
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA, FastICA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.manifold import TSNE
 
 st.set_page_config(page_title="Dimensionality Reduction Lab", page_icon="🔬", layout="wide")
 
@@ -29,21 +30,37 @@ def scale(df):
     return StandardScaler().fit_transform(df)
 
 
+@st.cache_data
+def fit_tsne(X, diagnosis, perplexity, seed):
+    projected = TSNE(
+        n_components=2,
+        perplexity=perplexity,
+        random_state=int(seed),
+        max_iter=1000,
+    ).fit_transform(X)
+    embedding = pd.DataFrame(
+        projected, columns=["t-SNE Component 1", "t-SNE Component 2"]
+    )
+    embedding["Diagnosis"] = diagnosis
+    return embedding
+
+
 df, y, diagnosis = load_data()
 X_scaled = scale(df)
 
-st.title("🔬 Dimensionality Reduction: PCA, LDA & ICA")
+st.title("🔬 Dimensionality Reduction: PCA, LDA, ICA & t-SNE")
 st.caption("Breast Cancer Wisconsin (Diagnostic) dataset · Lab 4")
 
 # ---------------- Sidebar ----------------
 st.sidebar.header("Settings")
 page = st.sidebar.radio(
     "Section",
-    ["Data Explorer", "PCA", "LDA", "ICA", "Comparison"],
+    ["Data Explorer", "PCA", "LDA", "ICA", "t-SNE", "Comparison"],
 )
 n_pca = st.sidebar.slider("PCA components", 2, 10, 4)
 n_ica = st.sidebar.slider("ICA components", 2, 10, 4)
-seed = st.sidebar.number_input("Random seed (ICA)", value=42, step=1)
+tsne_perplexity = st.sidebar.slider("t-SNE perplexity", 5, 50, 30)
+seed = st.sidebar.number_input("Random seed", value=42, step=1)
 
 # ---------------- Fit models ----------------
 pca_full = PCA().fit(X_scaled)
@@ -61,7 +78,6 @@ ica = FastICA(n_components=n_ica, random_state=int(seed), max_iter=1000)
 X_ica = ica.fit_transform(X_scaled)
 ica_df = pd.DataFrame(X_ica, columns=[f"IC {i+1}" for i in range(n_ica)])
 ica_df["Diagnosis"] = diagnosis
-
 
 # ---------------- Pages ----------------
 if page == "Data Explorer":
@@ -171,9 +187,35 @@ elif page == "ICA":
     with st.expander("Projected data"):
         st.dataframe(ica_df.head(20))
 
+elif page == "t-SNE":
+    st.subheader("t-distributed Stochastic Neighbor Embedding")
+    st.write(
+        "t-SNE emphasizes local neighborhood structure in a 2D embedding. "
+        "Distances between separated clusters should not be interpreted as "
+        "global distances in the original feature space."
+    )
+    tsne_df = fit_tsne(X_scaled, diagnosis, tsne_perplexity, seed)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    sns.scatterplot(
+        data=tsne_df,
+        x="t-SNE Component 1",
+        y="t-SNE Component 2",
+        hue="Diagnosis",
+        palette=PALETTE,
+        alpha=0.7,
+        ax=ax,
+    )
+    ax.set_title("t-SNE: 2D Embedding", fontweight="bold")
+    ax.grid(True, ls="--", alpha=0.5)
+    st.pyplot(fig)
+    with st.expander("Projected data"):
+        st.dataframe(tsne_df.head(20))
+
 else:
-    st.subheader("Side-by-side comparison")
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    st.subheader("PCA, LDA, ICA, and t-SNE comparison")
+    tsne_df = fit_tsne(X_scaled, diagnosis, tsne_perplexity, seed)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.ravel()
     sns.scatterplot(data=pca_df, x="PC 1", y="PC 2", hue="Diagnosis", palette=PALETTE, alpha=0.7, ax=axes[0])
     axes[0].set_title("PCA: PC 1 vs PC 2", fontweight="bold")
     rng = np.random.default_rng(42)
@@ -185,6 +227,16 @@ else:
     axes[1].set_ylabel("Jitter")
     sns.scatterplot(data=ica_df, x="IC 1", y="IC 2", hue="Diagnosis", palette=PALETTE, alpha=0.7, ax=axes[2])
     axes[2].set_title("ICA: IC 1 vs IC 2", fontweight="bold")
+    sns.scatterplot(
+        data=tsne_df,
+        x="t-SNE Component 1",
+        y="t-SNE Component 2",
+        hue="Diagnosis",
+        palette=PALETTE,
+        alpha=0.7,
+        ax=axes[3],
+    )
+    axes[3].set_title("t-SNE: 2D Embedding", fontweight="bold")
     for a in axes:
         a.grid(True, ls="--", alpha=0.5)
     fig.suptitle("Comparison of Dimensionality Reduction Transformations", fontsize=15, fontweight="bold")
@@ -193,5 +245,6 @@ else:
     st.markdown(
         "- **PCA** – unsupervised, maximises variance; ignores labels.\n"
         "- **LDA** – supervised, maximises class separation (1 component for 2 classes).\n"
-        "- **ICA** – unsupervised, finds statistically independent sources."
+        "- **ICA** – unsupervised, finds statistically independent sources.\n"
+        "- **t-SNE** – nonlinear embedding that emphasizes local neighborhoods."
     )
